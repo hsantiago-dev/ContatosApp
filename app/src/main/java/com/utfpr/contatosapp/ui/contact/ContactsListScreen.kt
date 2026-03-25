@@ -9,15 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -26,7 +29,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,40 +45,119 @@ import androidx.compose.ui.unit.dp
 import com.utfpr.contatosapp.R
 import com.utfpr.contatosapp.data.Contact
 import com.utfpr.contatosapp.ui.theme.ContatosAppTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 @Composable
-fun ContactsListScreen(modifier: Modifier = Modifier) {
-    var isLoading = true
-    var isError = false
-    var contacts = listOf<Contact>()
+fun ContactsListScreen(
+    modifier: Modifier = Modifier,
+    coroutineScope: CoroutineScope = rememberCoroutineScope()
+) {
+    val isInitialCompositionState: MutableState<Boolean> = rememberSaveable {
+        mutableStateOf(true)
+    }
+    val isLoadingState: MutableState<Boolean> = rememberSaveable {
+        mutableStateOf(false)
+    }
+    val isErrorState: MutableState<Boolean> = rememberSaveable {
+        mutableStateOf(false)
+    }
+    val contactsState: MutableState<List<Contact>> = rememberSaveable {
+        mutableStateOf(listOf())
+    }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = { AppBar() }
-    ) { paddingValues ->
-        val defaultModifier: Modifier = Modifier.padding(paddingValues)
-        if (isLoading) {
-            LoadingState(modifier = defaultModifier)
-        } else if (isError) {
-            ErrorState(modifier = defaultModifier)
-        } else if (contacts.isEmpty()) {
-            EmptyListState(modifier = defaultModifier)
-        } else {
-            List(
-                modifier = defaultModifier,
-                contacts = contacts
-            )
+    val loadContacts: () -> Unit = {
+        isLoadingState.value = true
+        isErrorState.value = false
+
+        coroutineScope.launch {
+            delay(2000)
+            isErrorState.value = Random.nextBoolean()
+            if (!isErrorState.value) {
+                val isEmpty = Random.nextBoolean()
+                if (isEmpty) {
+                    contactsState.value = listOf()
+                } else {
+                    contactsState.value = generateContacts()
+                }
+            }
+            isLoadingState.value = false
+        }
+    }
+
+    if (isInitialCompositionState.value) {
+        loadContacts()
+        isInitialCompositionState.value = false
+    }
+
+    val contentModifier = modifier.fillMaxSize()
+    if (isLoadingState.value) {
+        LoadingState(modifier = contentModifier)
+    } else if (isErrorState.value) {
+        ErrorState(
+            modifier = contentModifier,
+            onTryAgainPressed = loadContacts
+        )
+    } else {
+        Scaffold(
+            modifier = modifier.fillMaxSize(),
+            topBar = {
+                AppBar(
+                    onRefreshPressed = loadContacts
+                )
+            },
+            floatingActionButton = {
+                ExtendedFloatingActionButton(onClick = {
+                    contactsState.value = contactsState.value.plus(
+                        Contact(firstName = "Teste", lastName = "Teste")
+                    )
+                }) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = "Adicionar"
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text("Novo contato")
+                }
+            }
+        ) { paddingValues ->
+            val defaultModifier: Modifier = Modifier.padding(paddingValues)
+            if (contactsState.value.isEmpty()) {
+                EmptyListState(modifier = defaultModifier)
+            } else {
+                List(
+                    modifier = defaultModifier,
+                    contacts = contactsState.value
+                )
+            }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppBar(modifier: Modifier = Modifier) {
+fun AppBar(
+    modifier: Modifier = Modifier,
+   onRefreshPressed: () -> Unit
+) {
     TopAppBar(
         modifier = modifier.fillMaxWidth(),
         title = {
             Text("Contatos")
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            titleContentColor = MaterialTheme.colorScheme.primary,
+            actionIconContentColor = MaterialTheme.colorScheme.primary
+        ),
+        actions = {
+            IconButton(onClick = onRefreshPressed) {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = "Atualizar"
+                )
+            }
         }
     )
 }
@@ -79,7 +166,9 @@ fun AppBar(modifier: Modifier = Modifier) {
 @Composable
 fun AppBarPreview() {
     ContatosAppTheme {
-        AppBar()
+        AppBar(
+            onRefreshPressed = {}
+        )
     }
 }
 
@@ -113,7 +202,10 @@ fun LoadingStatePreview() {
 }
 
 @Composable
-fun ErrorState(modifier: Modifier = Modifier) {
+fun ErrorState(
+    modifier: Modifier = Modifier,
+    onTryAgainPressed: () -> Unit
+) {
     Column(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -144,7 +236,7 @@ fun ErrorState(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.primary
         )
         ElevatedButton(
-            onClick = { /*TODO*/ },
+            onClick = onTryAgainPressed,
             modifier = Modifier.padding(top = 16.dp)
         ) {
             Text("Tentar novamente")
@@ -156,7 +248,9 @@ fun ErrorState(modifier: Modifier = Modifier) {
 @Composable
 fun ErrorStatePreview() {
     ContatosAppTheme {
-        ErrorState()
+        ErrorState(
+            onTryAgainPressed = {}
+        )
     }
 }
 
@@ -212,41 +306,51 @@ fun List(
     modifier: Modifier = Modifier,
     contacts: List<Contact> = emptyList()
 ) {
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(state = rememberScrollState())
     ) {
-        contacts.forEach {
-            var isFavorite = it.isFavorite
-
-            ListItem(
-                headlineContent = {
-                    Text(it.fullName)
-                },
-                supportingContent = {
-                    Text(it.phoneNumber)
-                },
-                trailingContent = {
-                    IconButton(
-                        onClick = {
-                            isFavorite = !isFavorite
-                        }
-                    ) {
-                        Icon(
-                            imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = "Favorite",
-                            tint = if (isFavorite) {
-                                Color.Red
-                            } else {
-                                LocalContentColor.current
-                            }
-                        )
-                    }
-                }
-            )
+        items(contacts) { contact ->
+            ContactListItem(contact = contact)
         }
     }
+}
+
+@Composable
+fun ContactListItem(
+    modifier: Modifier = Modifier,
+    contact: Contact
+) {
+    val isFavoriteState: MutableState<Boolean> = rememberSaveable {
+        mutableStateOf(contact.isFavorite)
+    }
+    ListItem(
+        modifier = modifier,
+        headlineContent = {
+            Text(contact.fullName)
+        },
+        trailingContent = {
+            IconButton(
+                onClick = {
+                    isFavoriteState.value = !isFavoriteState.value
+                }
+            ) {
+                Icon(
+                    imageVector = if (isFavoriteState.value) {
+                        Icons.Filled.Favorite
+                    } else {
+                        Icons.Filled.FavoriteBorder
+                    },
+                    contentDescription = "Favoritar",
+                    tint = if (isFavoriteState.value) {
+                        Color.Red
+                    } else {
+                        LocalContentColor.current
+                    }
+                )
+            }
+        }
+    )
 }
 
 @Preview(showBackground = true)
@@ -254,13 +358,37 @@ fun List(
 fun List() {
     ContatosAppTheme {
         List(
-            contacts = listOf(
-                Contact(firstName = "Henrick", lastName = "Souza", phoneNumber = "(11) 99999-9999"),
-                Contact(firstName = "Ana", lastName = "Silva", phoneNumber = "(11) 99999-9999"),
-                Contact(firstName = "João", lastName = "Souza", phoneNumber = "(11) 99999-9999"),
-                Contact(firstName = "Maria", lastName = "Silva", phoneNumber = "(11) 99999-9999"),
-                Contact(firstName = "Pedro", lastName = "Souza", phoneNumber = "(11) 99999-9999"),
-            )
+            contacts = generateContacts()
         )
     }
+}
+
+private fun generateContacts(): List<Contact> {
+    val firstNames = listOf(
+        "João", "José", "Everton", "Marcos", "André", "Anderson", "Antônio",
+        "Laura", "Ana", "Maria", "Joaquina", "Suelen"
+    )
+    val lastNames = listOf(
+        "Do Carmo", "Oliveira", "Dos Santos", "Da Silva", "Brasil", "Pichetti",
+        "Cordeiro", "Silveira", "Andrades", "Cardoso"
+    )
+    val contacts: MutableList<Contact> = mutableListOf()
+    for (i in 0..29) {
+        var generatedNewContact = false
+        while (!generatedNewContact) {
+            val firstNameIndex = Random.nextInt(firstNames.size)
+            val lastNameIndex = Random.nextInt(lastNames.size)
+            val newContact = Contact(
+                id = i + 1,
+                firstName = firstNames[firstNameIndex],
+                lastName = lastNames[lastNameIndex]
+            )
+            if (!contacts.any { it.fullName == newContact.fullName }) {
+                contacts.add(newContact)
+                generatedNewContact = true
+            }
+        }
+    }
+
+    return contacts
 }
